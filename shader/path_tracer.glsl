@@ -47,22 +47,6 @@ struct intersection_pdf
     float envmap_pdf;
 };
 
-#ifdef USE_PUSH_CONSTANTS
-layout(push_constant, scalar) uniform push_constant_buffer
-{
-    uint samples;
-    uint previous_samples;
-    float min_ray_dist;
-    float indirect_clamping;
-    float film_radius;
-    float russian_roulette_delta;
-    int antialiasing;
-    int environment_proj;
-    vec4 environment_factor;
-    float regularization_gamma;
-} control;
-#endif
-
 #ifdef TLAS_BINDING
 #include "ggx.glsl"
 
@@ -142,66 +126,6 @@ float sample_environment_map_pdf(vec3 dir)
     else return 1.0f / (4.0f * M_PI);
 }
 #endif
-
-void sample_point_light(
-    point_light pl,
-    vec2 u,
-    vec3 pos,
-    out vec3 out_dir,
-    out float out_length,
-    out vec3 color,
-    out float pdf
-){
-    vec3 dir = pos - pl.pos;
-    float dist2 = dot(dir, dir);
-    float k = 1.0f - pl.radius * pl.radius / dist2;
-    float dir_cutoff = k > 0 ? sqrt(k) : -1.0f;
-    out_dir = sample_cone(u, -normalize(dir), dir_cutoff);
-
-    float b = dot(dir, out_dir);
-    out_length = -b - sqrt(max(b * b - dist2 + pl.radius * pl.radius, 0.0f));
-
-    color = get_spotlight_intensity(pl, out_dir) * pl.color;
-
-    if(pl.radius == 0.0f)
-    {
-        // We mark infinite PDFs with the minus sign on the NEE side.
-        pdf = -dist2;
-    }
-    else
-    {
-        color /= pl.radius * pl.radius * M_PI;
-        pdf = 1 / (2.0f * M_PI * (1.0f - dir_cutoff));
-    }
-}
-
-float sample_point_light_pdf(point_light pl, vec3 pos)
-{
-    vec3 dir = pos - pl.pos;
-    float dist2 = dot(dir, dir);
-    float k = 1.0f - pl.radius * pl.radius / dist2;
-    float dir_cutoff = k > 0 ? sqrt(k) : -1.0f;
-
-    if(pl.radius == 0.0f) return 0;
-    else return 1 / (2.0f * M_PI * (1.0f - dir_cutoff));
-}
-
-float sample_directional_light_pdf(directional_light dl)
-{
-    return dl.dir_cutoff >= 1.0f ? 0.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-}
-
-void sample_directional_light(
-    directional_light dl,
-    vec2 u,
-    out vec3 out_dir,
-    out vec3 color,
-    out float pdf
-){
-    out_dir = sample_cone(u, -dl.dir, dl.dir_cutoff);
-    pdf = dl.dir_cutoff >= 1.0f ? -1.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-    color = pdf > 0 ? dl.color * pdf : dl.color;
-}
 
 void get_nee_sampling_probabilities(out float point, out float triangle, out float directional, out float envmap)
 {
@@ -289,19 +213,19 @@ bool get_intersection_info(
     nee_pdf.envmap_pdf = 0;
     if(payload.instance_id >= 0)
     {
-        float solid_angle = 0.0f;
+        float pdf = 0.0f;
         vertex_data vd = get_interpolated_vertex(
             view, payload.barycentrics,
             payload.instance_id,
             payload.primitive_id
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-            , origin, solid_angle
+            , origin, pdf
 #endif
         );
         mat = sample_material(payload.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        nee_pdf.tri_light_pdf = solid_angle == 0.0f ? 0.0f : 1.0f / solid_angle;
+        nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
         light = mat.emission;
         mat.emission = vec3(0);
 #else
@@ -419,10 +343,10 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 
         vec3 color = tl.emission_factor;
 
-        float solid_angle = 0.0f;
-        out_dir = sample_spherical_triangle(u.xy, A, B, C, solid_angle);
+        float tri_pdf = 0.0f;
+        out_dir = sample_triangle_light(u.xy, A, B, C, tri_pdf);
         out_length = ray_plane_intersection_dist(out_dir, A, B, C);
-        if(solid_angle <= 0 || isnan(solid_angle) || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist || any(isnan(out_dir)))
+        if(isinf(tri_pdf) || tri_pdf <= 0 || out_length <= control.min_ray_dist || any(isnan(out_dir)))
         { // Same triangle, trying to intersect itself... Or zero-area degenerate triangle.
             pdf = 1.0f;
             out_dir = vec3(0);
@@ -439,7 +363,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         // Prevent shadow ray from intersecting with the target triangle
         out_length -= control.min_ray_dist;
 
-        pdf = triangle_prob / (light_count * solid_angle);
+        pdf = triangle_prob * tri_pdf / light_count;
         return color;
     }
 #endif
@@ -469,34 +393,51 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     return vec3(0);
 }
 
-void eval_explicit_lights(
+void next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
     inout vec3 diffuse_radiance,
     inout vec3 specular_radiance
 ){
-    vec3 out_dir;
-    float out_length = 0.0f;
-    float light_pdf;
-    // Sample lights
-    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
+#if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
+    if(false
+#ifdef NEE_SAMPLE_POINT_LIGHTS
+        || scene_metadata.point_light_count > 0
+#endif
+#ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
+        || scene_metadata.directional_light_count > 0
+#endif
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+        || scene_metadata.tri_light_count > 0
+#endif
+#ifdef NEE_SAMPLE_ENVMAP
+        || control.environment_proj >= 0
+#endif
+    ){
+        vec3 out_dir;
+        float out_length = 0.0f;
+        float light_pdf;
+        // Sample lights
+        vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
 
-    vec3 shading_light = out_dir * tbn;
-    vec3 d, s;
-    float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, d, s);
-    bool opaque = mat.transmittance < 0.0001f;
-    d = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : d;
-    s = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : s;
-    shadow_terminator_fix(d, s, shading_light.z, mat);
+        vec3 shading_light = out_dir * tbn;
+        vec3 d, s;
+        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, d, s);
+        bool opaque = mat.transmittance < 0.0001f;
+        d = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : d;
+        s = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : s;
+        shadow_terminator_fix(d, s, shading_light.z, mat);
 
-    // TODO: Check if this conditional just hurts performance
-    if(any(greaterThan((d+s) * contrib, vec3(0.0001f))))
-        contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
+        // TODO: Check if this conditional just hurts performance
+        if(any(greaterThan((d+s) * contrib, vec3(0.0001f))))
+            contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
-    contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
-    diffuse_radiance += d * contrib;
-    specular_radiance += s * contrib;
+        contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
+        diffuse_radiance += d * contrib;
+        specular_radiance += s * contrib;
+    }
+#endif
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -593,32 +534,14 @@ void evaluate_ray(
 
         shading_view = normalize(shading_view);
 
-#if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
-        // Calculate NEE rays whenever they can be done.
-        if(
-            !terminal &&
-            (false
-#ifdef NEE_SAMPLE_POINT_LIGHTS
-            || scene_metadata.point_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
-            || scene_metadata.directional_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-            || scene_metadata.tri_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_ENVMAP
-            || control.environment_proj >= 0
-#endif
-            )
-        ){
+        if(!terminal)
+        {
             // Do NEE ray
-            eval_explicit_lights(
+            next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
                 mat, v, diffuse_radiance, specular_radiance
             );
         }
-#endif
 
         // Then, calculate contribution to pixel color from current bounce.
         vec3 contribution = attenuation * (diffuse_radiance * mat.albedo.rgb + specular_radiance);
@@ -664,8 +587,92 @@ void evaluate_ray(
 
         if(max(attenuation.x, max(attenuation.y, attenuation.z)) <= 0.0f) break;
     }
+
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+    vec3 specular = color - diffuse * first_hit_material.albedo.rgb;
+    specular /= mix(vec3(1), first_hit_material.albedo.rgb, first_hit_material.metallic);
+    color = diffuse + specular;
+#endif
 }
 
+#endif
+
+#ifdef CAMERA_DATA_BINDING
+void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec3 dir)
+{
+    vec2 cam_offset = vec2(0.0);
+    if(control.antialiasing == 1)
+    {
+#if defined(USE_POINT_FILTER)
+        cam_offset = vec2(0.0);
+#elif defined(USE_BOX_FILTER)
+        cam_offset = generate_film_sample(lsampler) * 2.0f - 1.0f;
+#elif defined(USE_BLACKMAN_HARRIS_FILTER)
+        cam_offset = sample_blackman_harris_concentric_disk(
+            generate_film_sample(lsampler).xy
+        ) * 2.0f;
+#else
+#error "Unknown filter type"
+#endif
+        cam_offset *= 2.0f * control.film_radius;
+    }
+
+    const camera_data cam = get_camera();
+    get_screen_camera_ray(
+        cam, cam_offset,
+#ifdef USE_DEPTH_OF_FIELD
+        generate_film_sample(lsampler),
+#else
+        vec2(0.5f),
+#endif
+        origin, dir
+    );
+}
+
+void write_all_outputs(
+    vec3 color,
+    vec3 direct,
+    vec3 diffuse,
+    pt_vertex_data first_hit_vertex,
+    sampled_material first_hit_material
+){
+    // Write all outputs
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+#ifdef USE_TRANSPARENT_BACKGROUND
+        const float alpha = first_hit_material.albedo.a;
+#else
+        const float alpha = 1.0;
+#endif
+
+        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
+        accumulate_gbuffer_direct(vec4(direct, alpha), p, control.samples, prev_samples);
+        accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, control.samples, prev_samples);
+
+        if(prev_samples == 0)
+        { // Only write gbuffer for the first sample.
+            ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+            write_gbuffer_albedo(first_hit_material.albedo, p);
+            write_gbuffer_material(
+                vec2(first_hit_material.metallic, first_hit_material.roughness), p
+            );
+            write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
+            write_gbuffer_pos(first_hit_vertex.pos, p);
+            #ifdef CALC_PREV_VERTEX_POS
+            write_gbuffer_screen_motion(
+                get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
+                p
+            );
+            #endif
+            write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
+        }
+    }
+}
 #endif
 
 #endif

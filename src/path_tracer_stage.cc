@@ -17,6 +17,7 @@ namespace path_tracer
         shader_source shadow_chit("shader/path_tracer_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
+        defines["SAMPLES_PER_PASS"] = std::to_string(opt.samples_per_pass);
 
         if(opt.russian_roulette_delta > 0)
             defines["USE_RUSSIAN_ROULETTE"];
@@ -39,57 +40,16 @@ namespace path_tracer
         if(opt.depth_of_field)
             defines["USE_DEPTH_OF_FIELD"];
 
-        if(opt.sample_point_lights > 0)
-            defines["NEE_SAMPLE_POINT_LIGHTS"] = std::to_string(opt.sample_point_lights);
-        if(opt.sample_directional_lights > 0)
-            defines["NEE_SAMPLE_DIRECTIONAL_LIGHTS"] = std::to_string(opt.sample_directional_lights);
-        if(opt.sample_envmap > 0)
-            defines["NEE_SAMPLE_ENVMAP"] = std::to_string(opt.sample_envmap);
-        if(opt.sample_emissive_triangles > 0)
-            defines["NEE_SAMPLE_EMISSIVE_TRIANGLES"] = std::to_string(opt.sample_emissive_triangles);
-
 #define TR_GBUFFER_ENTRY(name, ...)\
         if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
         TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
 
-        switch(opt.film)
-        {
-        case film::POINT:
-            defines["USE_POINT_FILTER"];
-            break;
-        case film::BOX:
-            defines["USE_BOX_FILTER"];
-            break;
-        case film::BLACKMAN_HARRIS:
-            defines["USE_BLACKMAN_HARRIS_FILTER"];
-            break;
-        }
-
-        switch(opt.mis_mode)
-        {
-        case multiple_importance_sampling_mode::MIS_DISABLED:
-            break;
-        case multiple_importance_sampling_mode::MIS_BALANCE_HEURISTIC:
-            defines["MIS_BALANCE_HEURISTIC"];
-            break;
-        case multiple_importance_sampling_mode::MIS_POWER_HEURISTIC:
-            defines["MIS_POWER_HEURISTIC"];
-            break;
-        }
-
-        switch(opt.bounce_mode)
-        {
-        case bounce_sampling_mode::HEMISPHERE:
-            defines["BOUNCE_HEMISPHERE"];
-            break;
-        case bounce_sampling_mode::COSINE_HEMISPHERE:
-            defines["BOUNCE_COSINE_HEMISPHERE"];
-            break;
-        case bounce_sampling_mode::MATERIAL:
-            defines["BOUNCE_MATERIAL"];
-            break;
-        }
+        add_defines(opt.sampling_weights, defines);
+        add_defines(opt.film, defines);
+        add_defines(opt.mis_mode, defines);
+        add_defines(opt.bounce_mode, defines);
+        add_defines(opt.tri_light_mode, defines);
 
         rt_camera_stage::get_common_defines(defines, opt);
 
@@ -157,24 +117,31 @@ path_tracer_stage::path_tracer_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(
-        dev, output_target,
-        rt_stage::get_common_state(
-            ray_count, uvec4(0,0,output_target.get_size()),
-            path_tracer::load_sources(opt, output_target), opt
-        ),
-        opt,
-        "path tracing",
-        opt.samples_per_pixel
+        dev, output_target, opt, "path tracing",
+        opt.samples_per_pixel / opt.samples_per_pass
     ),
+    gfx(dev, rt_stage::get_common_state(
+        ray_count, uvec4(0,0,output_target.get_size()),
+        path_tracer::load_sources(opt, output_target), opt
+    )),
     opt(opt)
 {
 }
 
-void path_tracer_stage::record_command_buffer_push_constants(
+void path_tracer_stage::init_scene_resources()
+{
+    rt_camera_stage::init_descriptors(gfx);
+}
+
+void path_tracer_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
-    uint32_t /*frame_index*/,
-    uint32_t pass_index
+    uint32_t frame_index,
+    uint32_t pass_index,
+    uvec3 expected_dispatch_size
 ){
+    if(pass_index == 0)
+        gfx.bind(cb, frame_index);
+
     scene* cur_scene = get_scene();
     path_tracer::push_constant_buffer control;
 
@@ -196,14 +163,12 @@ void path_tracer_stage::record_command_buffer_push_constants(
     control.indirect_clamping = opt.indirect_clamping;
     control.regularization_gamma = opt.regularization_gamma;
 
-    control.previous_samples = pass_index;
-    control.samples = min(
-        opt.samples_per_pixel - (int)control.previous_samples,
-        1
-    );
-    control.antialiasing = opt.film != film::POINT ? 1 : 0;
+    control.previous_samples = pass_index * opt.samples_per_pass;
+    control.samples = opt.samples_per_pass;
+    control.antialiasing = opt.film != film_filter::POINT ? 1 : 0;
 
     gfx.push_constants(cb, control);
+    gfx.trace_rays(cb, expected_dispatch_size);
 }
 
 }

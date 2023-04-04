@@ -205,7 +205,7 @@ namespace tr
 
 void parse_command_line_options(char** argv, options& opt)
 {
-    argv++; // Skip name
+    const char* program_name = *argv++;
     bool skip_flags = false;
 
     while(*argv)
@@ -216,13 +216,22 @@ void parse_command_line_options(char** argv, options& opt)
             if(prefix(arg, "-"))
             {
                 if(*arg == 0) skip_flags = true;
-                else if(cmp(arg, "help")) throw option_parse_error("");
+                else if(cmp(arg, "help"))
+                {
+                    print_help(program_name);
+                    throw option_parse_error("");
+                }
                 else if(prefix(arg, "config="))
-                    parse_config_options(load_text_file(arg).c_str(), opt);
+                    parse_config_options(
+                        load_text_file(arg).c_str(),
+                        fs::path(arg).parent_path(),
+                        opt
+                    );
                 else if(prefix(arg, "preset="))
                 {
                     parse_config_options(
                         load_text_file(get_resource_path(std::string("data/presets/")+arg+".cfg")).c_str(),
+                        "data/presets",
                         opt
                     );
                 }
@@ -415,7 +424,7 @@ void parse_command_line_options(char** argv, options& opt)
 #undef TR_STRUCT_OPT
 }
 
-bool parse_config_options(const char* config_str, options& opt)
+bool parse_config_options(const char* config_str, fs::path relative_path, options& opt)
 {
     bool got_any = false;
     while(*config_str != 0)
@@ -450,11 +459,21 @@ bool parse_config_options(const char* config_str, options& opt)
             continue;
         }
         else if(identifier == "config")
-            parse_config_options(load_text_file(param).c_str(), opt);
+        {
+            fs::path param_path(param);
+            if(param_path.is_relative())
+                param_path = relative_path / param_path;
+            parse_config_options(
+                load_text_file(param_path.string()).c_str(),
+                param_path.parent_path(),
+                opt
+            );
+        }
         else if(identifier == "preset")
         {
             parse_config_options(
                 load_text_file(get_resource_path("data/presets/"+param+".cfg")).c_str(),
+                "data/presets/",
                 opt
             );
         }
@@ -574,7 +593,7 @@ bool parse_command(const char* config_str, options& opt)
 {
     try
     {
-        return parse_config_options(config_str, opt);
+        return parse_config_options(config_str, "", opt);
     }
     catch(const option_parse_error& err)
     {

@@ -59,6 +59,7 @@
         headless::EXR, \
         {"exr", headless::EXR}, \
         {"png", headless::PNG}, \
+        {"bmp", headless::BMP}, \
         {"raw", headless::RAW}, \
         {"none", headless::EMPTY} \
     )\
@@ -137,6 +138,7 @@
         options::PATH_TRACER, \
         {"whitted", options::WHITTED}, \
         {"path-tracer", options::PATH_TRACER}, \
+        {"direct", options::DIRECT}, \
         {"raster", options::RASTER}, \
         {"dshgi", options::DSHGI}, \
         {"dshgi-server", options::DSHGI_SERVER}, \
@@ -164,21 +166,27 @@
         "Sets the number of samples per pixel for path tracing, or MSAA " \
         "samples for rasterization.", \
         1, 1, INT_MAX) \
+    TR_INT_OPT(samples_per_pass, \
+        "Sets the number of samples per pass for path tracing. This is " \
+        "useful when command buffers would otherwise get bloated with " \
+        "extremely high SPP counts. Too high values can cause driver " \
+        "timeouts. ", \
+        1, 1, 128) \
     TR_BOOL_OPT(shadow_terminator_fix, \
         "Enables support for a workaround for the shadow terminator issue, " \
         "compatible with the method used in Blender 2.90. This does not " \
         "conserve energy, but unless it's manually specified for a model in " \
         "the input scene, it has no effect.", \
         true) \
-    TR_ENUM_OPT(film, film::filter, \
+    TR_ENUM_OPT(film, film_filter, \
         "Chooses the film type for path tracing. Point sampling can enable " \
         "some optimizations in > 1spp situations, and may be required for " \
         "certain post-processing effects. The other methods implement " \
         "antialiasing.", \
-        film::POINT, \
-        {"point", film::POINT}, \
-        {"box", film::BOX}, \
-        {"blackman-harris", film::BLACKMAN_HARRIS} \
+        film_filter::POINT, \
+        {"point", film_filter::POINT}, \
+        {"box", film_filter::BOX}, \
+        {"blackman-harris", film_filter::BLACKMAN_HARRIS} \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \
@@ -339,9 +347,9 @@
         "Multiply the number of devices for debugging multi-GPU rendering.", \
         0, 0, 16) \
     TR_ENUM_OPT(sampler, rt_stage::sampler_type, \
-        "Sets the sampling method used in path tracing. Defaults to the Sobol " \
-        "sequence on a space-filling curve with Owen scrambling.", \
-        rt_stage::sampler_type::SOBOL_Z_ORDER_3D, \
+        "Sets the sampling method used in path tracing. Defaults to uniform " \
+        "random.", \
+        rt_stage::sampler_type::UNIFORM_RANDOM, \
         {"uniform-random", rt_stage::sampler_type::UNIFORM_RANDOM}, \
         {"sobol-z2", rt_stage::sampler_type::SOBOL_Z_ORDER_2D}, \
         {"sobol-z3", rt_stage::sampler_type::SOBOL_Z_ORDER_3D}, \
@@ -377,6 +385,25 @@
         {"svgf", options::denoiser_type::SVGF}, \
         {"bmfr", options::denoiser_type::BMFR} \
     ) \
+    TR_STRUCT_OPT(svgf_params, \
+        "Parameters for the SVGF denoiser.\n" \
+        "atrous-diffuse-iter: number of iterations of the atrous filter for the diffuse channel\n"\
+        "atrous-spec-iter: number of iterations of the atrous filter for the specular channel\n"\
+        "atrous-kernel-radius: atrous filter radius\n"\
+        "sigma-l: luminance weight for atrous filter\n"\
+        "sigma-z: depth weight for atrous filter\n"\
+        "sigma-n: normal weight for atrous filter\n"\
+        "min-alpha-color: controls temporal accumulation speed for diffuse and specular color\n" \
+        "min-alpha-moments: controls temporal accumulation speed for moments used to drive the variance guidance\n", \
+        TR_STRUCT_OPT_INT(atrous_diffuse_iter, 5, 1, 16) \
+        TR_STRUCT_OPT_INT(atrous_spec_iter, 5, 0, 16) \
+        TR_STRUCT_OPT_INT(atrous_kernel_radius, 2, 1, 16) \
+        TR_STRUCT_OPT_FLOAT(sigma_l, 10.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(sigma_z, 1.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(sigma_n, 128.0f, 0.0f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(min_alpha_color, 0.02f, 0.001f, 1.0f) \
+        TR_STRUCT_OPT_FLOAT(min_alpha_moments, 0.2f, 0.001f, 1.0f) \
+    )\
     TR_BOOL_OPT(accumulation, \
         "Whether to accumulate samples from multiple frames or not. " \
         "For interactive mode, samples are accumulated when the camera is " \
@@ -384,6 +411,13 @@
         "reached by accumulating the same frame.", \
         false \
     ) \
+    TR_ENUM_OPT(tri_light_mode, tri_light_sampling_mode, \
+        "Sets the sampling method used for triangle area lights.", \
+        tri_light_sampling_mode::SOLID_ANGLE, \
+        {"area", tri_light_sampling_mode::AREA}, \
+        {"solid-angle", tri_light_sampling_mode::SOLID_ANGLE}, \
+        {"hybrid", tri_light_sampling_mode::HYBRID} \
+    )\
     TR_BOOL_OPT(transparent_background, \
         "Replaces background with alpha transparency, regardless of " \
         "environment map usage.", \
@@ -445,6 +479,34 @@
         "Shows the scene stats including triangles count, static and dynamic objects count, texture count, and the number of light sources.", \
         false \
     ) \
+    TR_BOOL_OPT(pre_transform_vertices, \
+        "Pre-calculate transformed vertices into a separate buffer." \
+        "Increases memory usage, but speeds up multi-bounce path tracing " \
+        "performance.", \
+        false \
+    )\
+    TR_ENUM_OPT(as_strategy, blas_strategy, \
+        "Acceleration structure strategy; i.e. how geometries are assigned " \
+        "into BLASes. per-material assigns each material of each model a " \
+        "different BLAS. per-model assigns each model a BLAS. " \
+        "static-merged-dynamic-per-model merges all static geometries into " \
+        "one BLAS, while dynamic geometries are given per-model BLASes. " \
+        "all-merged puts everything in one. Each approach has different " \
+        "performance and memory tradeoffs.", \
+        blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL, \
+        {"per-material", blas_strategy::PER_MATERIAL}, \
+        {"per-model", blas_strategy::PER_MODEL}, \
+        {"static-merged-dynamic-per-model", blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL}, \
+        {"all-merged", blas_strategy::ALL_MERGED_STATIC} \
+    ) \
+    TR_BOOL_OPT(silent, \
+        "Disables general prints. Errors and timing data is still shown.", \
+        false \
+    ) \
+    TR_STRING_OPT(timing_output, \
+        "Sets the timing data output file. Default is stdout.", \
+        "" \
+    )
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================
@@ -454,16 +516,20 @@
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
 #include "rt_renderer.hh"
-#include "film.hh"
+#include "rt_common.hh"
 #include "feature_stage.hh"
 #include "raster_stage.hh"
 #include "camera.hh"
+#include "mesh_scene.hh"
 #include <string>
 #include <variant>
 #include <stdexcept>
 #include <optional>
 #include <climits>
 #include <cfloat>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #ifdef ENABLE_VULKAN_VALIDATION
 static constexpr bool VULKAN_VALIDATION_ENABLED_BY_DEFAULT = true;
@@ -515,6 +581,7 @@ struct options
     enum basic_pipeline_type
     {
         PATH_TRACER = 0,
+        DIRECT,
         WHITTED,
         RASTER,
         DSHGI,
@@ -564,7 +631,7 @@ struct options
 };
 
 void parse_command_line_options(char** argv, options& opt);
-bool parse_config_options(const char* config_str, options& opt);
+bool parse_config_options(const char* config_str, fs::path relative_path, options& opt);
 bool parse_command(const char* config_str, options& opt);
 void print_command_help(const std::string& command);
 void print_help(const char* program_name);

@@ -27,11 +27,13 @@ public:
 
     struct options
     {
-        size_t max_meshes = 1024;
+        size_t max_instances = 1024;
         size_t max_samplers = 128;
 
         int max_ray_depth = 8;
         float min_ray_dist = 0.001f;
+
+        bool pre_transformed_vertices = false;
 
         int rng_seed = 0;
         sampler_type local_sampler  = sampler_type::UNIFORM_RANDOM;
@@ -52,7 +54,6 @@ public:
 
     rt_stage(
         device_data& dev,
-        const gfx_pipeline::pipeline_state& local_state,
         const options& opt,
         const std::string& timer_name,
         unsigned pass_count = 1
@@ -77,16 +78,13 @@ protected:
         uint32_t frame_index,
         uint32_t pass_index
     ) = 0;
-    virtual void init_scene_resources();
+    virtual void init_scene_resources() = 0;
+    void init_descriptors(basic_pipeline& pp);
     void record_command_buffers();
 
     unsigned get_pass_count() const;
 
-    gfx_pipeline gfx;
-
 private:
-    void init_resources();
-
     options opt;
     unsigned pass_count = 1;
     timer rt_timer;
