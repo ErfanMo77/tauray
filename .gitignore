@@ -22,3 +22,6 @@ external/SDL2-2.0.12/
 external/packagecache/
 x64/
 .vscode
+vcpkg_installed
+/vcpkg_installed
+/vcpkg_installed
