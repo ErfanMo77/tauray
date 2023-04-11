@@ -21,6 +21,7 @@ public:
     {
         const char* title = "TauRay";
         uvec2 size = uvec2(1280, 720);
+        float scale_factor = 1.0f;
         bool fullscreen = false;
         bool vsync = false;
         bool hdr_display = false;
