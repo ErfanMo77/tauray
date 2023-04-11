@@ -182,6 +182,7 @@ target_include_directories(tauray-core PUBLIC SYSTEM
 target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp
 "${CMAKE_CURRENT_SOURCE_DIR}/external/FSR/ffx_fsr2_api_vk_x64d.lib"
  "${CMAKE_CURRENT_SOURCE_DIR}/external/FSR/ffx_fsr2_api_x64d.lib"
+ "-lc"
 )
 target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
 

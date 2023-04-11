@@ -350,6 +350,7 @@ context* create_context(const options& opt)
         window::options win_opt;
         (context::options&)win_opt = ctx_opt;
         win_opt.size = uvec2(opt.width, opt.height);
+        win_opt.scale_factor = opt.scale_factor;
         win_opt.fullscreen = opt.fullscreen;
         win_opt.vsync = opt.vsync;
         win_opt.hdr_display = opt.hdr;
