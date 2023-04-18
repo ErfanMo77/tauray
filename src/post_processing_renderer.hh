@@ -11,6 +11,7 @@
 #include "frame_delay_stage.hh"
 #include "gbuffer.hh"
 #include "bmfr_stage.hh"
+#include "fsr_stage.hh"
 
 namespace tr
 {
@@ -27,6 +28,7 @@ public:
         std::optional<svgf_stage::options> svgf_denoiser;
         std::optional<taa_stage::options> taa;
         std::optional<bmfr_stage::options> bmfr;
+        std::optional<fsr_stage::options> fsr;
         tonemap_stage::options tonemap;
         size_t active_viewport_count;
     };
@@ -67,6 +69,8 @@ private:
     std::unique_ptr<svgf_stage> svgf;
     std::unique_ptr<taa_stage> taa;
     std::unique_ptr<bmfr_stage> bmfr;
+    std::unique_ptr<fsr_stage> fsr;
+
 
     // Tonemap should _always_ be the last stage. You can think of its task
     // as simply fixing the mistakes display manufacturers made a long time

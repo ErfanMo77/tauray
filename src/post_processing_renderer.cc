@@ -67,6 +67,9 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
 
     if(opt.taa.has_value())
         spec.screen_motion_present = true;
+    
+    if(opt.fsr.has_value())
+        spec.screen_motion_present = true;
 }
 
 void post_processing_renderer::set_display(gbuffer_target input_gbuffer)
@@ -114,6 +117,9 @@ dependencies post_processing_renderer::render(dependencies deps)
 
     if(taa)
         deps.add(taa->run(deps));
+
+    if(fsr)
+        deps.add(fsr->run(deps));
 
     out_deps.add(tonemap->run(deps));
 
@@ -257,6 +263,15 @@ void post_processing_renderer::init_pipelines()
         taa->set_scene(cur_scene);
     }
 
+    if(opt.fsr.has_value())
+    {
+        opt.fsr.reset(new fsr_stage(
+            *dev,
+            opt.fsr.value()
+        ));
+        fsr->set_scene(cur_scene);
+    }
+
     opt.tonemap.input_msaa = (int)msaa;
     opt.tonemap.transition_output_layout = true;
     render_target display = dev->ctx->get_array_render_target();
@@ -275,6 +290,7 @@ void post_processing_renderer::deinit_pipelines()
     spatial_reprojection.reset();
     svgf.reset();
     taa.reset();
+    fsr.reset();
     tonemap.reset();
 
     pingpong[0].reset();
