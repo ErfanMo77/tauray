@@ -4,6 +4,7 @@
 #include "context.hh"
 #include "stage.hh"
 #include "timer.hh"
+#include "scene.hh"
 
 #include <FSR/ffx_fsr2.h>
 
@@ -24,16 +25,22 @@ public:
         device_data& dev,
         const options& opt
     );
+    fsr_stage(const fsr_stage& other) = delete;
+    fsr_stage(fsr_stage&& other) = delete;
 
+    void set_scene(scene* cur_scene);
+    virtual void update(uint32_t frame_index) override;
+
+    void init_resources();
 
 private:
-    void init_resources();
-    virtual void update(uint32_t frame_index) override;
-    
     FfxFsr2Context fsr2_context;
     FfxFsr2ContextDescription fsr2_context_desc;
     std::vector<vec4> jitter_history;
+
+    uint32_t render_width, render_height;
     options opt;
+    scene* cur_scene;
     timer stage_timer;
 };
 
