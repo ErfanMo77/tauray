@@ -5,6 +5,8 @@
 #include "stage.hh"
 #include "timer.hh"
 #include "scene.hh"
+#include "gbuffer.hh"
+#include "camera.hh"
 
 #include <FSR/ffx_fsr2.h>
 
@@ -23,6 +25,7 @@ public:
 
     fsr_stage(
         device_data& dev,
+        gbuffer_target& input_features,
         const options& opt
     );
     fsr_stage(const fsr_stage& other) = delete;
@@ -36,7 +39,7 @@ public:
 private:
     FfxFsr2Context fsr2_context;
     FfxFsr2ContextDescription fsr2_context_desc;
-    std::vector<vec4> jitter_history;
+    gbuffer_target input_features;
 
     uint32_t render_width, render_height;
     options opt;
