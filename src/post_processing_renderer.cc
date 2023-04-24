@@ -9,7 +9,11 @@ post_processing_renderer::post_processing_renderer(
 {
     // It's easiest to test WIP post processing pipelines by forcing their
     // options from here
-
+    this->opt.fsr = fsr_stage::options{
+        1920,
+        1080,
+        1.5f
+    };
     // this->opt.example_denoiser = example_denoiser_stage::options{
     //     1,
     //     4,
@@ -149,6 +153,11 @@ void post_processing_renderer::init_pipelines()
     render_target in_color = input_target.color;
     render_target out_color = input_target.color;
 
+    if(opt.fsr.has_value())
+    {
+        out_color = input_target.color_fsr;
+    }
+
     bool need_temporal = opt.temporal_reprojection.has_value() || opt.svgf_denoiser.has_value() || opt.bmfr.has_value();
     gbuffer_target prev_gbuffer;
     if(need_temporal)
@@ -250,7 +259,7 @@ void post_processing_renderer::init_pipelines()
         ));
     }
 
-    if(opt.taa.has_value())
+    if(opt.taa.has_value() && !opt.fsr.has_value())
     {
         opt.taa->active_viewport_count = dev->ctx->get_display_count();
         gbuffer_target tmp = input_target;
@@ -265,8 +274,9 @@ void post_processing_renderer::init_pipelines()
 
     if(opt.fsr.has_value())
     {
-        opt.fsr.reset(new fsr_stage(
+        fsr.reset(new fsr_stage(
             *dev,
+            input_target,
             opt.fsr.value()
         ));
         fsr->set_scene(cur_scene);
