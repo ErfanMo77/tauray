@@ -9,11 +9,11 @@ post_processing_renderer::post_processing_renderer(
 {
     // It's easiest to test WIP post processing pipelines by forcing their
     // options from here
-    this->opt.fsr = fsr_stage::options{
-        1920,
-        1080,
-        1.5f
-    };
+    // this->opt.fsr = fsr_stage::options{
+    //     1920,
+    //     1080,
+    //     1.5f
+    // };
     // this->opt.example_denoiser = example_denoiser_stage::options{
     //     1,
     //     4,
@@ -74,6 +74,7 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
     
     if(opt.fsr.has_value())
         spec.screen_motion_present = true;
+    
 }
 
 void post_processing_renderer::set_display(gbuffer_target input_gbuffer)
@@ -152,10 +153,21 @@ void post_processing_renderer::init_pipelines()
 
     render_target in_color = input_target.color;
     render_target out_color = input_target.color;
+    
+    render_target fsr_out;
 
     if(opt.fsr.has_value())
     {
-        out_color = input_target.color_fsr;
+        
+        fsr_out = render_target(
+            glm::uvec2(opt.fsr->display_width,opt.fsr->display_height),
+            0,
+            1,
+            nullptr,
+            vk::Format::eR16G16B16A16Sfloat
+        );
+
+        out_color = fsr_out;
     }
 
     bool need_temporal = opt.temporal_reprojection.has_value() || opt.svgf_denoiser.has_value() || opt.bmfr.has_value();
@@ -277,6 +289,7 @@ void post_processing_renderer::init_pipelines()
         fsr.reset(new fsr_stage(
             *dev,
             input_target,
+            fsr_out,
             opt.fsr.value()
         ));
         fsr->set_scene(cur_scene);
