@@ -1,7 +1,7 @@
 #include "fsr_stage.hh"
 #include "misc.hh"
 
-#include <FSR/vk/ffx_fsr2_vk.h>
+#include "fsr_linux/src/ffx-fsr2-api/vk/ffx_fsr2_vk.h"
 
 using namespace tr;
 
@@ -23,7 +23,6 @@ fsr_stage::fsr_stage(
 void fsr_stage::set_scene(scene* cur_scene)
 {
     this->cur_scene = cur_scene;
-    init_resources();
 }
 
 void fsr_stage::update(uint32_t frame_index)
@@ -109,15 +108,15 @@ void fsr_stage::update(uint32_t frame_index)
             VK_FORMAT_UNDEFINED,
             L"FSR2_EmptyTransparencyAndCompositionMap"
         );
-
+        
         // Final output texture
         dispatchParameters.output = ffxGetTextureResourceVK(
             &fsr2_context,
-            input_features.color_fsr[i].image,
-            input_features.color_fsr[i].view,
+            out_color[i].image,
+            out_color[i].view,
             opt.display_width,
             opt.display_height,
-            (VkFormat)input_features.color_fsr.get_format(),
+            (VkFormat)out_color.get_format(),
             L"FSR2_OutputUpscaledColor",
             FFX_RESOURCE_STATE_UNORDERED_ACCESS
         );
@@ -134,7 +133,7 @@ void fsr_stage::update(uint32_t frame_index)
         dispatchParameters.enableSharpening = true;
         //TODO: add options
         dispatchParameters.sharpness = 1.0f;
-        dispatchParameters.frameTimeDelta = 0; //?? delta_time;
+        dispatchParameters.frameTimeDelta = 0.017f; //?? delta_time;
         dispatchParameters.preExposure = 1.0f;
         dispatchParameters.renderSize.width = render_width;
         dispatchParameters.renderSize.height = render_height;
@@ -156,8 +155,13 @@ void fsr_stage::init_resources()
     render_width  = opt.display_width;
     render_height = opt.display_height;
 
+
     opt.display_width = render_width * opt.scale_factor;
     opt.display_height = render_height * opt.scale_factor;
+
+    printf("Render resolution: %dx%d\n", render_width, render_height);
+    printf("Display resolution: %dx%d\n", opt.display_width, opt.display_height);
+
 
     // Setup VK interface.
     const size_t scratchBufferSize = ffxFsr2GetScratchMemorySizeVK(dev->pdev);

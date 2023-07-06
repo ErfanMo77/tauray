@@ -18,8 +18,6 @@
 #define TR_GBUFFER_ENTRIES \
     /* RGB: total color in linear color space. */\
     TR_GBUFFER_ENTRY(color, vk::Format::eR16G16B16A16Sfloat)\
-    /* RGB: total color after FSR pass is done (display resolution)*/\
-    TR_GBUFFER_ENTRY(color_fsr, vk::Format::eR16G16B16A16Sfloat)\
     /* RGB: direct light in linear color space. */\
     TR_GBUFFER_ENTRY(direct, vk::Format::eR16G16B16A16Sfloat)\
     /* RGB:diffusedirect light in linear color space. */\

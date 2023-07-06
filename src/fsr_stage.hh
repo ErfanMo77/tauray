@@ -8,7 +8,7 @@
 #include "gbuffer.hh"
 #include "camera.hh"
 
-#include <FSR/ffx_fsr2.h>
+#include "fsr_linux/src/ffx-fsr2-api/ffx_fsr2.h"
 
 namespace tr
 {
@@ -18,14 +18,15 @@ class fsr_stage: public stage
 public:
     struct options
     {
-        size_t display_width = 1920;
-        size_t display_height = 1080;
-        float scale_factor = 1.0f;
+        size_t display_width;
+        size_t display_height;
+        float scale_factor;
     };
 
     fsr_stage(
         device_data& dev,
         gbuffer_target& input_features,
+        render_target& output_target,
         const options& opt
     );
     fsr_stage(const fsr_stage& other) = delete;
@@ -40,6 +41,7 @@ private:
     FfxFsr2Context fsr2_context;
     FfxFsr2ContextDescription fsr2_context_desc;
     gbuffer_target input_features;
+    render_target out_color;
 
     uint32_t render_width, render_height;
     options opt;
