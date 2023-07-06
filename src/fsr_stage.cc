@@ -11,6 +11,7 @@ namespace tr
 fsr_stage::fsr_stage(
     device_data& dev,
     gbuffer_target& input_features,
+    render_target& output_target,
     const options& opt
 ):  stage(dev),
     input_features(input_features),
@@ -18,6 +19,7 @@ fsr_stage::fsr_stage(
     stage_timer(dev, "FSR stage")
 {
     init_resources();
+    out_color = output_target;
 }
 
 void fsr_stage::set_scene(scene* cur_scene)
