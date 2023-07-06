@@ -72,8 +72,9 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
     if(opt.taa.has_value())
         spec.screen_motion_present = true;
     
-    if(opt.fsr.has_value())
+    if(opt.fsr.has_value()){
         spec.screen_motion_present = true;
+    }
     
 }
 
@@ -155,19 +156,27 @@ void post_processing_renderer::init_pipelines()
     render_target out_color = input_target.color;
     
     render_target fsr_out;
+    std::unique_ptr<texture> fsr_out_texture;
 
     if(opt.fsr.has_value())
     {
+    fsr_out_texture.reset(new texture(
+        *dev,
+        glm::uvec2(opt.fsr->display_width*opt.fsr->scale_factor, opt.fsr->display_height*opt.fsr->scale_factor),
+        1,
+        vk::Format::eR16G16B16A16Sfloat,
+        0,
+        nullptr,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eStorage,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::SampleCountFlagBits::e1
+    ));
         
-        fsr_out = render_target(
-            glm::uvec2(opt.fsr->display_width,opt.fsr->display_height),
-            0,
-            1,
-            nullptr,
-            vk::Format::eR16G16B16A16Sfloat
-        );
-
+        fsr_out = fsr_out_texture->get_array_render_target(dev->index);
         out_color = fsr_out;
+        auto size = fsr_out.get_size();
+        printf("size:%d,%d",size.x,size.y);
     }
 
     bool need_temporal = opt.temporal_reprojection.has_value() || opt.svgf_denoiser.has_value() || opt.bmfr.has_value();

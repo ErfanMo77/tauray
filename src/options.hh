@@ -12,6 +12,7 @@
     TR_ENUM_OPT(scale_factor, float, \
         "Set FSR 2.2 valid scaling factors.(1.5: Quality, 1.7: Balanced, 2.0: Performance, 3.0: Ultra Performance)", \
         1.0f,\
+        {"1.0",1.0f},\
         {"1.5",1.5f},\
         {"1.7",1.7f},\
         {"2.0",2.0f},\
