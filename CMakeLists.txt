@@ -95,6 +95,7 @@ add_library(tauray-core STATIC
   src/frame_client.cc
   src/frame_delay_stage.cc
   src/frame_server.cc
+  src/fsr_stage.cc
   src/gbuffer.cc
   src/gltf.cc
   src/gpu_buffer.cc
@@ -178,9 +179,10 @@ target_include_directories(tauray-core PUBLIC SYSTEM
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
-target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
-target_link_libraries(tauray-core "${CMAKE_CURRENT_SOURCE_DIR}/external/FSR/ffx_fsr2_api_vk_x64d.lib")
-target_link_libraries(tauray-core "${CMAKE_CURRENT_SOURCE_DIR}/external/FSR/ffx_fsr2_api_x64d.lib")
+target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp
+"${CMAKE_CURRENT_SOURCE_DIR}/external/FSR/ffx_fsr2_api_vk_x64d.lib"
+ "${CMAKE_CURRENT_SOURCE_DIR}/external/FSR/ffx_fsr2_api_x64d.lib"
+)
 target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
 
 if(MSVC)
