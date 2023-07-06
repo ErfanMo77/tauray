@@ -55,6 +55,8 @@ set(TAURAY_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 string(LENGTH "${TAURAY_PROJECT_ROOT}/" TAURAY_PROJECT_ROOT_PATH_SIZE)
 add_compile_definitions("TAURAY_PROJECT_ROOT_PATH_SIZE=${TAURAY_PROJECT_ROOT_PATH_SIZE}")
 
+add_subdirectory(external/fsr_linux/src/ffx-fsr2-api)
+
 add_subdirectory(external/fuchsia_radix_sort)
 
 find_package(SDL2 REQUIRED)
@@ -95,6 +97,7 @@ add_library(tauray-core STATIC
   src/frame_client.cc
   src/frame_delay_stage.cc
   src/frame_server.cc
+  src/fsr_stage.cc
   src/gbuffer.cc
   src/gltf.cc
   src/gpu_buffer.cc
@@ -171,12 +174,14 @@ add_executable(tauray
   src/main.cc
 )
 
+
 target_include_directories(tauray-core PUBLIC SYSTEM
     "external"
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
-target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
+
+target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp ffx_fsr2_api_x86_64 ffx_fsr2_api_vk_x86_64) 
 target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
 
 if(MSVC)

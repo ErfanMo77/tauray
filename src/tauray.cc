@@ -350,6 +350,7 @@ context* create_context(const options& opt)
         window::options win_opt;
         (context::options&)win_opt = ctx_opt;
         win_opt.size = uvec2(opt.width, opt.height);
+        win_opt.scale_factor = opt.scale_factor;
         win_opt.fullscreen = opt.fullscreen;
         win_opt.vsync = opt.vsync;
         win_opt.hdr_display = opt.hdr;
@@ -485,6 +486,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     opt.spatial_reprojection,
                     ctx.get_display_count()
                 );
+                if(opt.scale_factor != 1.0f)
+                {
+                    fsr_stage::options fsr_opt{};
+                    fsr_opt.display_width = opt.width;
+                    fsr_opt.display_height = opt.height;
+                    fsr_opt.scale_factor = opt.scale_factor;
+                    rt_opt.post_process.fsr = fsr_opt;
+                }
                 if (opt.denoiser == options::denoiser_type::SVGF)
                 {
                     svgf_stage::options svgf_opt{};
@@ -533,6 +542,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     opt.spatial_reprojection,
                     ctx.get_display_count()
                 );
+                if(opt.scale_factor != 1.0f)
+                {
+                    fsr_stage::options fsr_opt{};
+                    fsr_opt.display_width = opt.width;
+                    fsr_opt.display_height = opt.height;
+                    fsr_opt.scale_factor = opt.scale_factor;
+                    rt_opt.post_process.fsr = fsr_opt;
+                }
                 if(opt.denoiser == options::denoiser_type::SVGF)
                 {
                     svgf_stage::options svgf_opt{};

@@ -416,6 +416,12 @@ void parse_command_line_options(char** argv, options& opt)
         // Tonemapping is unwanted when rendering feature buffers
         opt.tonemap = tonemap_stage::LINEAR;
     }
+    
+    // Ugly trick that enables FSR to work
+    if(opt.scale_factor != 1.0f){
+        opt.width = (uint32_t)(opt.width/opt.scale_factor);
+        opt.height = (uint32_t)(opt.height/opt.scale_factor);
+    }
 
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT

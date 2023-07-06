@@ -9,7 +9,11 @@ post_processing_renderer::post_processing_renderer(
 {
     // It's easiest to test WIP post processing pipelines by forcing their
     // options from here
-
+    // this->opt.fsr = fsr_stage::options{
+    //     1920,
+    //     1080,
+    //     1.5f
+    // };
     // this->opt.example_denoiser = example_denoiser_stage::options{
     //     1,
     //     4,
@@ -67,6 +71,11 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
 
     if(opt.taa.has_value())
         spec.screen_motion_present = true;
+    
+    if(opt.fsr.has_value()){
+        spec.screen_motion_present = true;
+    }
+    
 }
 
 void post_processing_renderer::set_display(gbuffer_target input_gbuffer)
@@ -115,6 +124,9 @@ dependencies post_processing_renderer::render(dependencies deps)
     if(taa)
         deps.add(taa->run(deps));
 
+    if(fsr)
+        deps.add(fsr->run(deps));
+
     out_deps.add(tonemap->run(deps));
 
     if(delay)
@@ -142,6 +154,30 @@ void post_processing_renderer::init_pipelines()
 
     render_target in_color = input_target.color;
     render_target out_color = input_target.color;
+    
+    render_target fsr_out;
+    std::unique_ptr<texture> fsr_out_texture;
+
+    if(opt.fsr.has_value())
+    {
+    fsr_out_texture.reset(new texture(
+        *dev,
+        glm::uvec2(opt.fsr->display_width*opt.fsr->scale_factor, opt.fsr->display_height*opt.fsr->scale_factor),
+        1,
+        vk::Format::eR16G16B16A16Sfloat,
+        0,
+        nullptr,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eStorage,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::SampleCountFlagBits::e1
+    ));
+        
+        fsr_out = fsr_out_texture->get_array_render_target(dev->index);
+        out_color = fsr_out;
+        auto size = fsr_out.get_size();
+        printf("size:%d,%d",size.x,size.y);
+    }
 
     bool need_temporal = opt.temporal_reprojection.has_value() || opt.svgf_denoiser.has_value() || opt.bmfr.has_value();
     gbuffer_target prev_gbuffer;
@@ -244,7 +280,7 @@ void post_processing_renderer::init_pipelines()
         ));
     }
 
-    if(opt.taa.has_value())
+    if(opt.taa.has_value() && !opt.fsr.has_value())
     {
         opt.taa->active_viewport_count = dev->ctx->get_display_count();
         gbuffer_target tmp = input_target;
@@ -255,6 +291,17 @@ void post_processing_renderer::init_pipelines()
             opt.taa.value()
         ));
         taa->set_scene(cur_scene);
+    }
+
+    if(opt.fsr.has_value())
+    {
+        fsr.reset(new fsr_stage(
+            *dev,
+            input_target,
+            fsr_out,
+            opt.fsr.value()
+        ));
+        fsr->set_scene(cur_scene);
     }
 
     opt.tonemap.input_msaa = (int)msaa;
@@ -275,6 +322,7 @@ void post_processing_renderer::deinit_pipelines()
     spatial_reprojection.reset();
     svgf.reset();
     taa.reset();
+    fsr.reset();
     tonemap.reset();
 
     pingpong[0].reset();
