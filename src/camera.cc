@@ -36,8 +36,45 @@ void camera::copy_projection(const camera& other)
 void camera::perspective(float fov, float aspect, float near, float far)
 {
     type = PERSPECTIVE;
-    pd.perspective = {{}, vec2(0), fov, aspect, near, far, vec4(1,0,0,0)};
-    refresh();
+        // Left Projection Matrix
+    glm::mat4 leftProjectionMatrix = glm::transpose(glm::mat4(
+        0.814741f, 0.000000f, -0.317768f - 0.031201f, 0.000000f,
+        0.000000f, 0.895298f, 0.001304f, 0.000000f,
+        0.000000f, 0.000000f, -1.006689f, -0.200669f,
+        0.000000f, 0.000000f, -1.000000f, 0.000000f
+    ));
+    
+
+    // Right Projection Matrix
+    glm::mat4 rightProjectionMatrix = glm::transpose(glm::mat4(
+        0.816512f, 0.000000f, +0.322671f - 0.031201f, 0.000000f,
+        0.000000f, 0.892753f, 0.004993f, 0.000000f,
+        0.000000f, 0.000000f, -1.006689f, -0.200669f,
+        0.000000f, 0.000000f, -1.000000f, 0.000000f
+    ));
+    auto& projection = pd.perspective.projection;
+    if(aspect == 0.0f)
+        projection = leftProjectionMatrix;
+    else
+        projection = rightProjectionMatrix;
+    
+    pd.perspective.aspect = 1.0f;
+    //pd.perspective.fov = fov;
+    //pd.perspective.near = near;
+    //pd.perspective.far = far;
+    //pd.perspective.focus = vec4(1,0,0,0);
+
+    //print projection matrix
+    for(int i=0;i<4;i++){
+        for(int j=0;j<4;j++){
+            printf("%f ",projection[i][j]);
+        }
+        printf("\n");
+    }
+
+    //refresh();
+
+    //printf("projection matrix:%d",pd.perspective.projection[0][0]);
 }
 
 void camera::ortho(

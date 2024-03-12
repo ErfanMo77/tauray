@@ -106,7 +106,7 @@ openxr::~openxr()
     deinit_devices();
     vkDestroySurfaceKHR(instance, surface, nullptr);
     deinit_vulkan();
-    deinit_sdl();
+    //deinit_sdl();
 }
 
 bool openxr::init_frame()
@@ -323,6 +323,7 @@ void openxr::init_sdl()
     extensions.resize(count);
     if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
         throw std::runtime_error(SDL_GetError());
+    SDL_HideWindow(win);
 }
 
 void openxr::deinit_sdl()
@@ -504,8 +505,17 @@ void openxr::init_xr()
     for(size_t i = 0; i < views.size(); ++i)
     {
         camera& cam = cameras[i];
-        float aspect = image_size.x/(float)image_size.y;
-        cam.perspective(90, aspect, 0.1f, 300.0f);
+        float aspect = (image_size.x)/(float)image_size.y;
+         cam.set_fov(
+            -117.22f,
+            117.22f,
+            96.46f,
+            -96.46f
+        );
+        cam.perspective(117, i, 0.1f, 30.0f);
+        printf("camera v fov:%f\n",cam.get_vfov());
+        printf("camera h fov:%f\n",cam.get_hfov());
+        
     }
 
     view_states.resize(views.size(), {XR_TYPE_VIEW, nullptr, {}, {}});
@@ -616,6 +626,7 @@ void openxr::init_xr_swapchain()
         );
 
     image_format = vk::Format((VkFormat)swapchain_format);
+    TR_LOG("XR swapchain format: ", image_format);
     expected_image_layout = vk::ImageLayout::eTransferSrcOptimal;
 
     XrSwapchainCreateInfo create_info = {
@@ -1044,14 +1055,25 @@ void openxr::update_xr_views()
     {
         camera& cam = cameras[i];
         const XrView& v = view_states[i];
+        //  printf("For i = %d\n", i);
+        //     printf("projection layer fov left: %f\n", view_states[i].fov.angleLeft);
+        //     printf("projection layer fov right: %f\n", view_states[i].fov.angleRight);
+        //     printf("projection layer fov up: %f\n", view_states[i].fov.angleUp);
+        //     printf("projection layer fov down: %f\n", view_states[i].fov.angleDown);
 
-        cam.set_fov(
-            glm::degrees(v.fov.angleLeft),
-            glm::degrees(v.fov.angleRight),
-            glm::degrees(v.fov.angleUp),
-            glm::degrees(v.fov.angleDown)
-        );
-
+        // cam.set_fov(
+        //     glm::degrees(v.fov.angleLeft),
+        //     glm::degrees(v.fov.angleRight),
+        //     glm::degrees(v.fov.angleUp),
+        //     glm::degrees(v.fov.angleDown)
+        // );
+        XrFovf fov = {glm::radians(-117.22f), glm::radians(117.22f), glm::radians(96.46f), glm::radians(-96.46f)};
+        //  cam.set_fov(
+        //     -116,
+        //     116,
+        //     96,
+        //     -96
+        // );
         if(vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)
         {
             cam.set_orientation(quat(
@@ -1073,7 +1095,7 @@ void openxr::update_xr_views()
             projection_layer_views[i].pose.position = v.pose.position;
         }
 
-        projection_layer_views[i].fov = v.fov;
+        projection_layer_views[i].fov = fov;
     }
 }
 
